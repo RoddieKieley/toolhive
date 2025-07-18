@@ -32,7 +32,6 @@ spec:
           capabilities:
             drop:
             - ALL
-          runAsUser: 1000
         resources:
           limits:
             cpu: "500m"

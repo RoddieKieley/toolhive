@@ -78,6 +78,14 @@ tasks:
     cmds:
       - ko build --local -B ./cmd/thv-operator
 
+  build-operator-image-from-Dockerfile:
+    desc: Build the operator image using Buildah and the multi-stage Dockerfile
+    vars:
+      ROOT:
+        sh: git rev-parse --show-toplevel
+    cmds:
+      - buildah bud --format docker --layers -f {{.ROOT}}/containers/thv-operator/Dockerfile -t localhost/thv-operator:latest {{.ROOT}}
+
   operator-install-crds:
     desc: Install CRDs into the K8s cluster
     cmds:

@@ -19,6 +19,13 @@ The following statement of work depends on an understanding of multiple specific
 * You prefer to utilize the buildah tool at https://github.com/containers/buildah to build OCI images.
 * You prefer to utilize the podman tool at https://github.com/containers/podman to run OCI images.
 
+
+# Other tools
+
+* *The build system yaml utilizes go-task also known as task from https://taskfile.dev
+* Currently this project uses google ko at https://github.com/ko-build/ko to build the thv-operator.
+
+
 # Rules
 
 * Think, plan, and reason step by step.
@@ -27,167 +34,114 @@ The following statement of work depends on an understanding of multiple specific
 * When Additional fields may exist do not omit them for brevity.
 * Add a note at the beginning of any file that is created by AI indicating that the file was created in whole or in part by AI using Cursor and the model used.
 
-# Data provided
+# Current thv operator build process
 
-* The data provided is in the YAML 1.2 data language as per the definition of the YAML specification v1.2.2
-* The data conforms to the OpenAPI Specification v3.1.0
-* When the data contains the `url` or `URL` identifiers the meaning is defined as per 'Uniform Resource Locators (URL)'
-* The OpenAPI Specification v3.1.0 compliant data structure is specified in the `customresourcedefinition-mcpservers.mcp.opendatahub.io.yaml` file in the `ref` directory in this project.
-* In the Example provided YAML data that follows there will be multiple entries in the Example provided YAML data in the form of a numbered list, each of which begins with `spec:`.
-* Example provided YAML data is as follows:
-1.
-```
-spec:
-  server_detail:
-    description: Awesome MCP Servers - A curated list of Model Context Protocol servers
-    id: 0007544a-3948-4934-866b-b4a96fe53b55
-    name: io.github.appcypher/awesome-mcp-servers
-    packages:
-      - name: appcypher/awesome-mcp-servers
-        registry_name: unknown
-        version: ''
-    repository:
-      id: '895801050'
-      source: github
-      url: 'https://github.com/appcypher/awesome-mcp-servers'
-    version_detail:
-      is_latest: true
-      release_date: '2025-05-16T19:16:40Z'
-      version: 0.0.1-seed
-```
-2.  
-```
-spec:
-  server_detail:
-    description: ''
-    id: 010904ec-6e39-4bdc-878a-75a6e79d0500
-    name: io.github.kyrietangsheng/mcp-server-nationalparks
-    packages:
-      - environment_variables:
-          - description: YOUR_NPS_API_KEY
-            name: NPS_API_KEY
-        name: mcp-server-nationalparks
-        registry_name: npm
-        version: 1.0.0
-    repository:
-      id: '951713109'
-      source: github
-      url: 'https://github.com/KyrieTangSheng/mcp-server-nationalparks'
-    version_detail:
-      is_latest: true
-      release_date: '2025-05-16T19:11:05Z'
-      version: 0.0.1-seed
-```
+* The OCI Container image for the kubernetes operator in the cmd/thv-operator directory is currently built by executing go-task tasks from TaskFile.yml. 
+* In the TaskFile.yml from the cmd/thv-operator directory the task that builds the operator is "build-operator-image".
+* The "build-operator-image" task uses google ko to Build the operator image.
 
 # What to do
 
-* Write each of the provided Example provided YAML data entries from the numbered list to a file `example-data-#.yaml` where the `#` is replaced with the numbered list number itself. Write these files with numbered filenames in the `data` directory within the project. If one of the numbered list number files is found to already exist in the project then overwrite the existing file with the Example provided YAML data from the numbered list entry previously provided.
-
-## Create the command line utility
-
-### Process the data into golang types
-
-* From the `customresourcedefinition-mcpservers.mcp.opendatahub.io.yaml` file in the `ref` directory in this project the data structure in the `v1alpha1` named version in the `spec:` section of the `openAPIV3Schema` schema of `server_detail` is to be processed into golang struct types.
-* Analyse the `customresourcedefinition-mcpservers.mcp.opendatahub.io.yaml` file in the `ref` directory in this project, creating matching valid golang structs with json: annotations and yaml: annotations.
-  * In particular the command line utility needs to read and process the `server_detail` object data structure. Ensure all properties of the `server_detail` object have matching valid golang struct types created.
-  * Further more any subsequent related golang struct types that are required should also be used directly from https://github.com/RHEcosystemAppEng/mcp-catalog-operator/blob/main/api/v1alpha1/mcpserver_types.go where possible.
-  * Write these required golang struct types to a file `mcpserver_types.go` in the `types` directory.
-  * Example golang struct type with json: annotation for the top level `spec:` and child `server_detail:` sections from the Example provided YAML data previously provided:
-```
-// McpServerSpec defines the desired state of McpServer.
-type McpServerSpec struct {
-	ServerDetail ServerDetail `json:"server_detail"`
-}
-
-// ServerDetail represents detailed server information as defined in the spec
-type ServerDetail struct {
-	Server   `json:",inline"`
-	Packages []Package `json:"packages,omitempty"`
-	Remotes  []Remote  `json:"remotes,omitempty"`
-}
-```
-  * Where the golang struct types differ between the Example golang struct type and those in the https://github.com/RHEcosystemAppEng/mcp-catalog-operator/blob/main/api/v1alpha1/mcpserver_types.go file differ, prefer those in the mcpserver_types.go file where possible.
+* It is required to add a new task in the TaskFile.yml in the cmd/thv-operator directory entitled "build-operator-image-from-Dockerfile".
+* This new task "build-operator-image-from-Dockerfile" builds the golang project source code in cmd/thv-operator for the thv operator inside a container image via a new Dockerfile in the containers/thv-operator directory.
 
 
-### Write the golang source code for the command line utility
-
-* Write a command line utility in golang that utilizes the valid golang structs previously written to the `mcpserver_types.go` file in the `types` directory.
-* This command line utility in golang must:
-  * Examine the `data` directory to find all `*.yaml` files.
-  * For each of the `*.yaml` files found in the `data` directory, read and parse the YAML data from the individual file into the valid golang structs found in the `mcpserver_types.go` file.
-  * When the read and parse of an individual file is complete write a message to stdout indicating success or failure for that file as well as a newline.
-  * Evaluate each of the read and parsed golang struct instances representing server_detail. Check to see if the server_detail repository source has a value of `github`. If the server_detail repository source is `github` then for that server_detail instance check the server_detail repository url field. If the server_detail repository url field contains a valid Uniform Resource Locator it will refer to a `git` repository. Check this URL's git repository file list for a valid `Dockerfile`. If the git repository at this URL's has a valid `Dockerfile` print the server_detail name with " has Dockerfile" appended to stdout.
-
-
-### Write the golang test source code for the command line utility
-
-* You prefer to write the golang test source code for the command line utility using the ginkgo Modern Testing Framework from https://github.com/onsi/ginkgo and the gomega Preferred Matcher Library from https://github.com/onsi/gomega. The ginkgo Modern Testing Framework focuses on Behaviour-driven development as documented at https://en.wikipedia.org/wiki/Behavior-driven_development
-* Write matching tests for this golang command line utility using the ginkgo Modern Testing Framework and gomega Preferred Matcher Library using a Behaviour-driven development approach.
-  * In particular ensure the tests cover the functionality reading, parsing, and marshalling the YAML into golang struct type instances from `mcpserver_types.go` by using the original Example provided YAML data files from the `example-data-#.yaml` files in the `data` directory.
-  * A test must be provided that takes the each of the Example provided YAML data files of the name `example-data-#.yaml` in the `data` directory in turn, load it successfully into the golang struct types in `mcpserver_types.go`, then writes the data back to a new file named `example-data-rewritten-#.yaml` in the `data` directory in correct YAML format such that it is identical and compares successfully against the `example-data-#.yaml` in the `data` directory.
-* Execute the tests created using the `go test ./...` shell command. If all tests are Passed then proceed to the `Build the OCI image` section.
-
-## Build the OCI image for the command line utility
-
-* This command line utility should build correctly via the `go build ./...` shell command. If not return to the `Create the command line utility` section.
-
-### Create the Dockerfile for the command line utility
+## Create the Dockerfile for the thv-operator
 
 * The `Dockerfile` reference documentation is at https://docs.docker.com/reference/dockerfile/. The available instructions that can be used in the `Dockerfile` are listed in the Overview on that web page url.
 
-* Write a `Dockerfile` to the root directory of the project. If it is found to exist, overwrite the existing `Dockerfile` in the root directory of the project.
+* Write a `Dockerfile` to the containers/thv-operator directory of the project. If it is found to exist, overwrite the existing `Dockerfile` in the containers/thv-operator directory of the project.
 ** This `Dockerfile` will be a multi-stage build as described at https://docs.docker.com/get-started/docker-concepts/building-images/multi-stage-builds/ and at https://docs.docker.com/guides/golang/build-images/ for golang specifically.
-  * There are three stages in this multi-stage `Dockerfile`:
+  * There are two stages in this multi-stage `Dockerfile`:
     * Build the command line utility from golang source in the first `build-stage`.
-    * Run the tests in the container in the second `run-test-stage`.
     * Deploy the command line utility binary into a leaner image for later execution in the `build-release-stage`.
   * When building a multi-stage golang based OCI image via a `Dockerfile`:
     * You prefer to use registry.access.redhat.com/ubi9/go-toolset:1.23.9 as the golang source code `build-stage` builder image.
     * You prefer to use registry.access.redhat.com/ubi9/ubi-micro:9.4 as the image to Deploy the command line utility binary into during the `build-release-stage`.
-  * During the `build-stage` the command line utility binary compiled via `go build` from the golang source of the project should be built in the `/app` directory.  
+  * During the `build-stage` the thv-operator should be compiled via the instructions in the "build-operator" task in the TaskFile.yml in the cmd/thv-operator directory.  
 
 * Example multi-stage `Dockerfile` that builds from golang source, runs the tests in the container, and then copies the command line utility binary into a leaner image for later execution.
 ```
-# syntax=docker/dockerfile:1
+# Build the manager binary
+FROM registry.access.redhat.com/ubi9/go-toolset:1.24.4-1752083840 AS builder
 
-# Build the command line utility from golang source
-FROM registry.access.redhat.com/ubi9/go-toolset:1.23.9 AS build-stage
+ARG TARGETOS
+ARG TARGETARCH
 
-WORKDIR /app
+ENV GO_MODULE=github.com/arkmq-org/activemq-artemis-operator
 
-COPY go.mod go.sum ./
+### BEGIN REMOTE SOURCE
+# Use the COPY instruction only inside the REMOTE SOURCE block
+# Use the COPY instruction only to copy files to the container path $REMOTE_SOURCE_DIR/app
+ARG REMOTE_SOURCE_DIR=/tmp/remote_source
+RUN mkdir -p $REMOTE_SOURCE_DIR/app
+WORKDIR $REMOTE_SOURCE_DIR/app
+# Copy the Go Modules manifests
+COPY go.mod go.mod
+COPY go.sum go.sum
+# cache deps before building and copying source so that we don't need to re-download as much
+# and so that source changes don't invalidate our downloaded layer
 RUN go mod download
 
-COPY *.go ./
+# Copy the go source
+COPY main.go main.go
+COPY api/ api/
+COPY controllers/ controllers/
+COPY entrypoint/ entrypoint/
+COPY pkg/ pkg/
+COPY version/ version/
+### END REMOTE SOURCE
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /docker-gs-ping
+# Set up the workdir
+WORKDIR /opt/app-root/src
+RUN cp -r $REMOTE_SOURCE_DIR/app/* .
 
-# Run the tests in the container
-FROM build-stage AS run-test-stage
-RUN go test -v ./...
+# Build
+# the GOARCH has not a default value to allow the binary be built according to the host where the command
+# was called. For example, if we call make docker-build in a local env which has the Apple Silicon M1 SO
+# the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
+# by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
+# CGO_ENABLED is set to 1 for dynamic linking to OpenSSL to use FIPS validated cryptographic modules
+# when is executed on nodes that are booted into FIPS mode.
+RUN CGO_ENABLED=1 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -ldflags="-X '${GO_MODULE}/version.BuildTimestamp=`date '+%Y-%m-%dT%H:%M:%S'`'" -o manager main.go
 
-# Deploy the command line utility binary into a leaner image for later execution
-FROM gcr.io/distroless/base-debian11 AS build-release-stage
+FROM registry.access.redhat.com/ubi9-minimal:9.6-1752069876 AS base-env
+
+ENV BROKER_NAME=activemq-artemis
+ENV USER_UID=1000
+ENV USER_NAME=${BROKER_NAME}-operator
+ENV USER_HOME=/home/${USER_NAME}
+ENV OPERATOR=${USER_HOME}/bin/${BROKER_NAME}-operator
 
 WORKDIR /
 
-COPY --from=build-stage /docker-gs-ping /docker-gs-ping
+# Create operator bin
+RUN mkdir -p ${USER_HOME}/bin
 
-EXPOSE 8080
+# Copy the manager binary
+COPY --from=builder /opt/app-root/src/manager ${OPERATOR}
 
-USER nonroot:nonroot
+# Copy the entrypoint script
+COPY --from=builder /opt/app-root/src/entrypoint/entrypoint ${USER_HOME}/bin/entrypoint
 
-ENTRYPOINT ["/docker-gs-ping"]
+# Set operator bin owner and permissions
+RUN chown -R `id -u`:0 ${USER_HOME}/bin && chmod -R 755 ${USER_HOME}/bin
+
+# Upgrade packages
+RUN microdnf update -y --setopt=install_weak_deps=0 && rm -rf /var/cache/yum
+
+USER ${USER_UID}
+ENTRYPOINT ["${USER_HOME}/bin/entrypoint"]
+
+LABEL name="arkmq-org/activemq-artemis-operator"
+LABEL description="ActiveMQ Artemis Broker Operator"
+LABEL maintainer="Roddie Kieley <rkieley@redhat.com>"
+LABEL version="2.0.3"
 ```
 * For the build-stage in the `Dockerfile` utilize the registry.access.redhat.com/ubi9/go-toolset OCI image. Use the golang version that most closely matches that used in the Example multi-stage `Dockerfile`.
 
-### Build the `Dockerfile` for the command line utility into the OCI image
+### Build the `Dockerfile` for the thv-operator into the OCI image
 
 * Use the instructions in Using Containerfiles/Dockerfiles with Buildah at https://github.com/containers/buildah/blob/main/docs/tutorials/01-intro.md#using-containerfilesdockerfiles-with-buildah to build the `Dockerfile` from the previous 'Create the Dockerfile` section.
-  * The name to be given to the created image is 'localhost/seedtocontainer' with tag `latest`
+  * The name to be given to the created image is 'localhost/thv-operator' with tag `latest`
 
-### Test the execution of the OCI image built from the `Dockerfile` using the following command:
-
-go test ./...                         # confirm green
-buildah bud -t localhost/seedtocontainer:latest .   # build image
-podman run --rm localhost/seedtocontainer:latest    # parse YAML(s)
