@@ -552,6 +552,16 @@ func (r *MCPServerReconciler) deploymentForMCPServer(m *mcpv1alpha1.MCPServer) *
 		}
 	}
 
+	xdgConfigHome := corev1.EnvVar{
+		Name: "XDG_CONFIG_HOME",
+		Value: "/tmp",
+	}
+	home := corev1.EnvVar{
+		Name: "HOME",
+		Value: "/tmp",
+	}
+	env = append(env, xdgConfigHome)
+	env = append(env, home)
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        m.Name,
