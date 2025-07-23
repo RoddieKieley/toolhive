@@ -940,6 +940,28 @@ func ensurePodTemplateConfig(
 			podTemplateSpec.Spec.SecurityContext = podTemplateSpec.Spec.SecurityContext.WithRunAsGroup(int64(1000))
 		}
 	}
+
+	isOpenShift := true
+	if isOpenShift {
+		if podTemplateSpec.Spec.SecurityContext.RunAsUser != nil {
+			podTemplateSpec.Spec.SecurityContext.RunAsUser = nil
+		}
+
+		if podTemplateSpec.Spec.SecurityContext.RunAsGroup != nil {
+			podTemplateSpec.Spec.SecurityContext.RunAsGroup = nil
+		}
+
+		if podTemplateSpec.Spec.SecurityContext.FSGroup != nil {
+			podTemplateSpec.Spec.SecurityContext.FSGroup = nil
+		}
+
+		if podTemplateSpec.Spec.SecurityContext.SeccompProfile == nil {
+			podTemplateSpec.Spec.SecurityContext.SeccompProfile = corev1apply.SeccompProfile().WithType(corev1.SeccompProfileTypeRuntimeDefault)
+		} else {
+			podTemplateSpec.Spec.SecurityContext.SeccompProfile = podTemplateSpec.Spec.SecurityContext.SeccompProfile.WithType(corev1.SeccompProfileTypeRuntimeDefault)
+		}
+	}
+
 	return podTemplateSpec
 }
 
@@ -986,12 +1008,24 @@ func configureContainer(
 	attachStdio bool,
 	envVars []*corev1apply.EnvVarApplyConfiguration,
 ) {
+	logger.Infof("Configuring container %s with image %s", *container.Name, image)
+	logger.Infof("Command: ")
+	for _, arg := range command {
+		logger.Infof("Arg: %s", arg)
+	}
+	logger.Infof("AttachStdio: %v", attachStdio)
+	for _, envVar := range envVars {
+		logger.Infof("EnvVar: %s=%s", *envVar.Name, *envVar.Value)
+	}
+
 	container.WithImage(image).
 		WithArgs(command...).
 		WithStdin(attachStdio).
 		WithTTY(false).
 		WithEnv(envVars...)
 
+
+	
 	// Add container security context if not already present
 	if container.SecurityContext == nil {
 		container.WithSecurityContext(
@@ -1029,6 +1063,95 @@ func configureContainer(
 			container.SecurityContext = container.SecurityContext.WithAllowPrivilegeEscalation(false)
 		}
 	}
+
+	isOpenShift := true
+	if isOpenShift {
+		logger.Infof("Setting OpenShift security context requirements to container %s", *container.Name)
+		logSecurityContext(container.SecurityContext)
+
+		if container.SecurityContext.RunAsUser != nil {
+			container.SecurityContext.RunAsUser = nil
+		}
+
+		if container.SecurityContext.RunAsGroup != nil {
+			container.SecurityContext.RunAsGroup = nil
+		}
+
+		if container.SecurityContext.SeccompProfile == nil {
+			container.SecurityContext.SeccompProfile = corev1apply.SeccompProfile().WithType(corev1.SeccompProfileTypeRuntimeDefault)
+		} else {
+			container.SecurityContext.SeccompProfile = container.SecurityContext.SeccompProfile.WithType(corev1.SeccompProfileTypeRuntimeDefault)
+		}
+
+		if container.SecurityContext.Capabilities == nil {
+			container.SecurityContext.Capabilities = &corev1apply.CapabilitiesApplyConfiguration{
+				Drop: []corev1.Capability{"ALL"},
+			}
+		}
+
+		logger.Infof("container.SecurityContext is now %v", *container.SecurityContext)
+		logSecurityContext(container.SecurityContext)
+	}
+}
+
+// logSecurityContext logs every (dereferenced) field contained in a
+// *corev1apply.SecurityContextApplyConfiguration in a human-readable form.
+// It prints <nil> for unset pointer fields so the caller can easily see which
+// settings are populated.
+func logSecurityContext(sc *corev1apply.SecurityContextApplyConfiguration) {
+    if sc == nil {
+        logger.Info("container.SecurityContext is <nil>")
+        return
+    }
+
+    // helper closures to avoid repetitive nil checks
+    boolPtr := func(name string, v *bool) {
+        if v == nil {
+            logger.Infof("SecurityContext.%s: <nil>", name)
+        } else {
+            logger.Infof("SecurityContext.%s: %v", name, *v)
+        }
+    }
+
+    int64Ptr := func(name string, v *int64) {
+        if v == nil {
+            logger.Infof("SecurityContext.%s: <nil>", name)
+        } else {
+            logger.Infof("SecurityContext.%s: %d", name, *v)
+        }
+    }
+
+    // Log primitive pointer fields
+    boolPtr("Privileged", sc.Privileged)
+    boolPtr("RunAsNonRoot", sc.RunAsNonRoot)
+    boolPtr("AllowPrivilegeEscalation", sc.AllowPrivilegeEscalation)
+    boolPtr("ReadOnlyRootFilesystem", sc.ReadOnlyRootFilesystem)
+    int64Ptr("RunAsUser", sc.RunAsUser)
+    int64Ptr("RunAsGroup", sc.RunAsGroup)
+
+    // Seccomp profile type, if present
+    if sc.SeccompProfile != nil && sc.SeccompProfile.Type != nil {
+        logger.Infof("SecurityContext.SeccompProfile.Type: %v", *sc.SeccompProfile.Type)
+    } else {
+        logger.Infof("SecurityContext.SeccompProfile.Type: <nil>")
+    }
+
+    // Capabilities add/drop slices, if present
+    if sc.Capabilities != nil {
+        if sc.Capabilities.Add != nil {
+            logger.Infof("SecurityContext.Capabilities.Add: %v", sc.Capabilities.Add)
+        } else {
+            logger.Infof("SecurityContext.Capabilities.Add: <nil>")
+        }
+
+        if sc.Capabilities.Drop != nil {
+            logger.Infof("SecurityContext.Capabilities.Drop: %v", sc.Capabilities.Drop)
+        } else {
+            logger.Infof("SecurityContext.Capabilities.Drop: <nil>")
+        }
+    } else {
+        logger.Infof("SecurityContext.Capabilities: <nil>")
+    }
 }
 
 // configureMCPContainer configures the MCP container in the pod template
