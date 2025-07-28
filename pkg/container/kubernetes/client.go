@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/tools/watch"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/stacklok/toolhive/pkg/container/runtime"
 	"github.com/stacklok/toolhive/pkg/logger"
@@ -246,10 +247,24 @@ func (c *Client) DeployWorkload(ctx context.Context,
 	}
 
 	// Ensure the pod template has required configuration (labels, etc.)
-	podTemplateSpec = ensurePodTemplateConfig(podTemplateSpec, containerLabels)
+	isOpenShift := false
+	// Get a config to talk to the apiserver
+	cfg, err := config.GetConfig()
+	if err != nil {
+		//setupLog.Error(err, "Error getting config for APIServer")
+		os.Exit(1)
+	}
+
+	isOpenShift, err = DetectOpenShiftWith(cfg)
+	if err != nil {
+		//setupLog.Error(err, "can't determine api server type")
+		os.Exit(1)
+	}
+
+	podTemplateSpec = ensurePodTemplateConfig(podTemplateSpec, containerLabels, isOpenShift)
 
 	// Configure the MCP container
-	err := configureMCPContainer(
+	err = configureMCPContainer(
 		podTemplateSpec,
 		image,
 		command,
@@ -257,6 +272,7 @@ func (c *Client) DeployWorkload(ctx context.Context,
 		envVarList,
 		transportType,
 		options,
+		isOpenShift,
 	)
 	if err != nil {
 		return 0, err
@@ -891,6 +907,7 @@ func createPodTemplateFromPatch(patchJSON string) (*corev1apply.PodTemplateSpecA
 func ensurePodTemplateConfig(
 	podTemplateSpec *corev1apply.PodTemplateSpecApplyConfiguration,
 	containerLabels map[string]string,
+	isOpenShift bool,
 ) *corev1apply.PodTemplateSpecApplyConfiguration {
 	podTemplateSpec = ensureObjectMetaApplyConfigurationExists(podTemplateSpec)
 	// Ensure the pod template has labels
@@ -941,7 +958,6 @@ func ensurePodTemplateConfig(
 		}
 	}
 
-	isOpenShift := true
 	if isOpenShift {
 		if podTemplateSpec.Spec.SecurityContext.RunAsUser != nil {
 			podTemplateSpec.Spec.SecurityContext.RunAsUser = nil
@@ -1007,6 +1023,7 @@ func configureContainer(
 	command []string,
 	attachStdio bool,
 	envVars []*corev1apply.EnvVarApplyConfiguration,
+	isOpenShift bool,
 ) {
 	logger.Infof("Configuring container %s with image %s", *container.Name, image)
 	logger.Infof("Command: ")
@@ -1024,8 +1041,6 @@ func configureContainer(
 		WithTTY(false).
 		WithEnv(envVars...)
 
-
-	
 	// Add container security context if not already present
 	if container.SecurityContext == nil {
 		container.WithSecurityContext(
@@ -1064,7 +1079,6 @@ func configureContainer(
 		}
 	}
 
-	isOpenShift := true
 	if isOpenShift {
 		logger.Infof("Setting OpenShift security context requirements to container %s", *container.Name)
 		//logSecurityContext(container.SecurityContext)
@@ -1099,59 +1113,59 @@ func configureContainer(
 // It prints <nil> for unset pointer fields so the caller can easily see which
 // settings are populated.
 func logSecurityContext(sc *corev1apply.SecurityContextApplyConfiguration) {
-    if sc == nil {
-        logger.Info("container.SecurityContext is <nil>")
-        return
-    }
+	if sc == nil {
+		logger.Info("container.SecurityContext is <nil>")
+		return
+	}
 
-    // helper closures to avoid repetitive nil checks
-    boolPtr := func(name string, v *bool) {
-        if v == nil {
-            logger.Infof("SecurityContext.%s: <nil>", name)
-        } else {
-            logger.Infof("SecurityContext.%s: %v", name, *v)
-        }
-    }
+	// helper closures to avoid repetitive nil checks
+	boolPtr := func(name string, v *bool) {
+		if v == nil {
+			logger.Infof("SecurityContext.%s: <nil>", name)
+		} else {
+			logger.Infof("SecurityContext.%s: %v", name, *v)
+		}
+	}
 
-    int64Ptr := func(name string, v *int64) {
-        if v == nil {
-            logger.Infof("SecurityContext.%s: <nil>", name)
-        } else {
-            logger.Infof("SecurityContext.%s: %d", name, *v)
-        }
-    }
+	int64Ptr := func(name string, v *int64) {
+		if v == nil {
+			logger.Infof("SecurityContext.%s: <nil>", name)
+		} else {
+			logger.Infof("SecurityContext.%s: %d", name, *v)
+		}
+	}
 
-    // Log primitive pointer fields
-    boolPtr("Privileged", sc.Privileged)
-    boolPtr("RunAsNonRoot", sc.RunAsNonRoot)
-    boolPtr("AllowPrivilegeEscalation", sc.AllowPrivilegeEscalation)
-    boolPtr("ReadOnlyRootFilesystem", sc.ReadOnlyRootFilesystem)
-    int64Ptr("RunAsUser", sc.RunAsUser)
-    int64Ptr("RunAsGroup", sc.RunAsGroup)
+	// Log primitive pointer fields
+	boolPtr("Privileged", sc.Privileged)
+	boolPtr("RunAsNonRoot", sc.RunAsNonRoot)
+	boolPtr("AllowPrivilegeEscalation", sc.AllowPrivilegeEscalation)
+	boolPtr("ReadOnlyRootFilesystem", sc.ReadOnlyRootFilesystem)
+	int64Ptr("RunAsUser", sc.RunAsUser)
+	int64Ptr("RunAsGroup", sc.RunAsGroup)
 
-    // Seccomp profile type, if present
-    if sc.SeccompProfile != nil && sc.SeccompProfile.Type != nil {
-        logger.Infof("SecurityContext.SeccompProfile.Type: %v", *sc.SeccompProfile.Type)
-    } else {
-        logger.Infof("SecurityContext.SeccompProfile.Type: <nil>")
-    }
+	// Seccomp profile type, if present
+	if sc.SeccompProfile != nil && sc.SeccompProfile.Type != nil {
+		logger.Infof("SecurityContext.SeccompProfile.Type: %v", *sc.SeccompProfile.Type)
+	} else {
+		logger.Infof("SecurityContext.SeccompProfile.Type: <nil>")
+	}
 
-    // Capabilities add/drop slices, if present
-    if sc.Capabilities != nil {
-        if sc.Capabilities.Add != nil {
-            logger.Infof("SecurityContext.Capabilities.Add: %v", sc.Capabilities.Add)
-        } else {
-            logger.Infof("SecurityContext.Capabilities.Add: <nil>")
-        }
+	// Capabilities add/drop slices, if present
+	if sc.Capabilities != nil {
+		if sc.Capabilities.Add != nil {
+			logger.Infof("SecurityContext.Capabilities.Add: %v", sc.Capabilities.Add)
+		} else {
+			logger.Infof("SecurityContext.Capabilities.Add: <nil>")
+		}
 
-        if sc.Capabilities.Drop != nil {
-            logger.Infof("SecurityContext.Capabilities.Drop: %v", sc.Capabilities.Drop)
-        } else {
-            logger.Infof("SecurityContext.Capabilities.Drop: <nil>")
-        }
-    } else {
-        logger.Infof("SecurityContext.Capabilities: <nil>")
-    }
+		if sc.Capabilities.Drop != nil {
+			logger.Infof("SecurityContext.Capabilities.Drop: %v", sc.Capabilities.Drop)
+		} else {
+			logger.Infof("SecurityContext.Capabilities.Drop: <nil>")
+		}
+	} else {
+		logger.Infof("SecurityContext.Capabilities: <nil>")
+	}
 }
 
 // configureMCPContainer configures the MCP container in the pod template
@@ -1163,6 +1177,7 @@ func configureMCPContainer(
 	envVarList []*corev1apply.EnvVarApplyConfiguration,
 	transportType string,
 	options *runtime.DeployWorkloadOptions,
+	isOpenShift bool,
 ) error {
 	// Get the "mcp" container if it exists
 	mcpContainer := getMCPContainer(podTemplateSpec)
@@ -1172,7 +1187,7 @@ func configureMCPContainer(
 		mcpContainer = corev1apply.Container().WithName("mcp")
 
 		// Configure the container
-		configureContainer(mcpContainer, image, command, attachStdio, envVarList)
+		configureContainer(mcpContainer, image, command, attachStdio, envVarList, isOpenShift)
 
 		// Configure ports if needed
 		if options != nil && transportType == string(transtypes.TransportTypeSSE) {
@@ -1187,7 +1202,7 @@ func configureMCPContainer(
 		podTemplateSpec.Spec.WithContainers(mcpContainer)
 	} else {
 		// Configure the existing container
-		configureContainer(mcpContainer, image, command, attachStdio, envVarList)
+		configureContainer(mcpContainer, image, command, attachStdio, envVarList, isOpenShift)
 
 		// Configure ports if needed
 		if options != nil && transportType == string(transtypes.TransportTypeSSE) {
