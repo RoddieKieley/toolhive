@@ -1067,7 +1067,7 @@ func configureContainer(
 	isOpenShift := true
 	if isOpenShift {
 		logger.Infof("Setting OpenShift security context requirements to container %s", *container.Name)
-		logSecurityContext(container.SecurityContext)
+		//logSecurityContext(container.SecurityContext)
 
 		if container.SecurityContext.RunAsUser != nil {
 			container.SecurityContext.RunAsUser = nil
@@ -1089,8 +1089,8 @@ func configureContainer(
 			}
 		}
 
-		logger.Infof("container.SecurityContext is now %v", *container.SecurityContext)
-		logSecurityContext(container.SecurityContext)
+		//logger.Infof("container.SecurityContext is now %v", *container.SecurityContext)
+		//logSecurityContext(container.SecurityContext)
 	}
 }
 
