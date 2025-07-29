@@ -251,14 +251,12 @@ func (c *Client) DeployWorkload(ctx context.Context,
 	// Get a config to talk to the apiserver
 	cfg, err := config.GetConfig()
 	if err != nil {
-		//setupLog.Error(err, "Error getting config for APIServer")
-		os.Exit(1)
+		return 0, fmt.Errorf("error getting config for APIServer: %w", err)
 	}
 
 	isOpenShift, err = DetectOpenShiftWith(cfg)
 	if err != nil {
-		//setupLog.Error(err, "can't determine api server type")
-		os.Exit(1)
+		return 0, fmt.Errorf("can't determine api server type: %w", err)
 	}
 
 	podTemplateSpec = ensurePodTemplateConfig(podTemplateSpec, containerLabels, isOpenShift)
